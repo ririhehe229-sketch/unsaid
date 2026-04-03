@@ -1,0 +1,307 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
+import { motion, AnimatePresence } from 'framer-motion';
+import pb from '@/lib/pocketbaseClient';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
+import DraftModal from '@/components/DraftModal.jsx';
+
+const placeholders = [
+  "what's on your mind at 2am?",
+  "finish the thought…",
+  "what do you need to say?",
+  "I don't miss them, I just…",
+  "It's not the person, it's the way…",
+  "Almost moved on, but then…",
+  "Heavy chest when I think about…"
+];
+
+const emotionTags = [
+  'heavy chest',
+  'numb',
+  'overthinking at 2am',
+  'almost moved on',
+  'missing something, not someone'
+];
+
+const pageVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.4 } },
+  exit: { opacity: 0, transition: { duration: 0.3 } }
+};
+
+const WritePage = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { currentUser, isAuthenticated } = useAuth();
+  
+  const [content, setContent] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [draftId, setDraftId] = useState(null);
+  
+  const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
+  
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [randomDraft, setRandomDraft] = useState(null);
+
+  useEffect(() => {
+    // Initialize from state if editing a draft
+    if (location.state?.draft) {
+      setContent(location.state.draft.content || '');
+      setSelectedTags(location.state.draft.emotion_tags || []);
+      setDraftId(location.state.draft.id);
+    } else if (isAuthenticated) {
+      // Check for drafts to potentially show modal
+      checkDrafts();
+    }
+
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % placeholders.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [location.state, isAuthenticated]);
+
+  const checkDrafts = async () => {
+    try {
+      const drafts = await pb.collection('drafts').getList(1, 10, {
+        filter: `user_id="${currentUser.id}"`,
+        $autoCancel: false
+      });
+      
+      if (drafts.items.length > 0 && Math.random() < 0.3) {
+        const randomIdx = Math.floor(Math.random() * drafts.items.length);
+        setRandomDraft(drafts.items[randomIdx]);
+        setShowDraftModal(true);
+      }
+    } catch (error) {
+      console.error('Error checking drafts:', error);
+    }
+  };
+
+  const toggleTag = (tag) => {
+    if (selectedTags.includes(tag)) {
+      setSelectedTags(selectedTags.filter(t => t !== tag));
+    } else if (selectedTags.length < 2) {
+      setSelectedTags([...selectedTags, tag]);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!content.trim()) {
+      toast('please write something');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const record = await pb.collection('thoughts').create({
+        content: content.trim(),
+        emotion_tags: selectedTags,
+        user_id: currentUser?.id || null
+      }, { $autoCancel: false });
+
+      // If we were editing a draft, delete it after posting
+      if (draftId) {
+        await pb.collection('drafts').delete(draftId, { $autoCancel: false });
+      }
+
+      toast("it's here now");
+      navigate(`/thought/${record.id}`);
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!content.trim()) {
+      toast('nothing to hold onto yet');
+      return;
+    }
+
+    setSavingDraft(true);
+
+    try {
+      if (draftId) {
+        await pb.collection('drafts').update(draftId, {
+          content: content.trim(),
+          emotion_tags: selectedTags
+        }, { $autoCancel: false });
+      } else {
+        const record = await pb.collection('drafts').create({
+          content: content.trim(),
+          emotion_tags: selectedTags,
+          user_id: currentUser.id
+        }, { $autoCancel: false });
+        setDraftId(record.id);
+      }
+      toast('saved quietly');
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handlePostDraftFromModal = async (draft) => {
+    try {
+      const record = await pb.collection('thoughts').create({
+        content: draft.content,
+        emotion_tags: draft.emotion_tags,
+        user_id: currentUser.id
+      }, { $autoCancel: false });
+      
+      await pb.collection('drafts').delete(draft.id, { $autoCancel: false });
+      setShowDraftModal(false);
+      toast("it's here now");
+      navigate(`/thought/${record.id}`);
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    }
+  };
+
+  const handleDeleteDraftFromModal = async (id) => {
+    try {
+      await pb.collection('drafts').delete(id, { $autoCancel: false });
+      setShowDraftModal(false);
+      toast('let it go');
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    }
+  };
+
+  return (
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      <Helmet>
+        <title>Write a Thought - Unsaid</title>
+        <meta name="description" content="Share an incomplete thought" />
+      </Helmet>
+
+      <DraftModal 
+        isOpen={showDraftModal} 
+        draft={randomDraft} 
+        onClose={() => setShowDraftModal(false)}
+        onPost={handlePostDraftFromModal}
+        onDelete={handleDeleteDraftFromModal}
+      />
+
+      <div className="min-h-screen py-20 px-6 sm:px-8">
+        <div className="max-w-3xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1 }}
+            className="text-center mb-16"
+          >
+            <h1 className="text-5xl md:text-6xl font-serif italic tracking-wide leading-tight text-foreground">
+              What's left unsaid?
+            </h1>
+            <p className="mt-6 text-xl text-secondary-text/70 font-light">
+              Start a thought. Let others finish it.
+            </p>
+          </motion.div>
+
+          <motion.form 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1, delay: 0.3 }}
+            onSubmit={handleSubmit} 
+            className="space-y-12"
+          >
+            <div className="space-y-10">
+              <div className="relative">
+                {!content && !isFocused && (
+                  <div className="absolute top-8 left-8 right-8 pointer-events-none z-0">
+                    <AnimatePresence mode="wait">
+                      <motion.p
+                        key={placeholderIndex}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 0.4, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        transition={{ duration: 1.5 }}
+                        className="text-2xl md:text-3xl font-serif italic text-secondary-text"
+                      >
+                        {placeholders[placeholderIndex]}
+                      </motion.p>
+                    </AnimatePresence>
+                  </div>
+                )}
+                
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  rows={6}
+                  className="w-full bg-white/5 border border-white/10 rounded-3xl p-8 text-2xl md:text-3xl text-foreground font-serif leading-relaxed resize-none focus:outline-none input-glow transition-all duration-500 relative z-10 bg-transparent backdrop-blur-sm"
+                  style={{ 
+                    caretColor: 'hsl(var(--primary))',
+                    animation: isFocused ? 'pulse-cursor 2s infinite' : 'none'
+                  }}
+                />
+                <div className="absolute bottom-6 right-8 text-sm text-secondary-text/40 font-light tracking-wider z-10">
+                  {content.length} characters
+                </div>
+              </div>
+
+              <div className="px-4">
+                <p className="text-lg text-secondary-text/80 mb-6 font-light tracking-wide">
+                  choose what you're feeling <span className="text-sm opacity-50">(up to 2)</span>
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  {emotionTags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      onClick={() => toggleTag(tag)}
+                      className={`cursor-pointer px-5 py-2.5 text-sm font-light tracking-wide transition-all duration-500 hover-glow ${
+                        selectedTags.includes(tag)
+                          ? 'bg-primary/80 text-primary-foreground shadow-[0_0_15px_rgba(139,123,168,0.4)] border-primary/50'
+                          : 'bg-white/5 text-secondary-text border-white/10 hover:bg-white/10 hover:-translate-y-1'
+                      }`}
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-8 flex flex-col sm:flex-row justify-center gap-4">
+              <Button
+                type="submit"
+                disabled={loading || savingDraft}
+                className="bg-primary/80 text-primary-foreground hover:bg-primary hover:shadow-[0_0_25px_rgba(139,123,168,0.5)] transition-all duration-500 rounded-full px-12 py-7 text-xl font-light tracking-wide w-full sm:w-auto"
+              >
+                {loading ? 'gathering thoughts...' : 'let it out'}
+              </Button>
+              
+              {isAuthenticated && (
+                <Button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  disabled={loading || savingDraft}
+                  variant="outline"
+                  className="border-white/10 text-secondary-text hover:bg-white/5 hover:text-foreground transition-all duration-500 rounded-full px-10 py-7 text-lg font-light tracking-wide w-full sm:w-auto"
+                >
+                  {savingDraft ? 'holding...' : 'hold this thought…'}
+                </Button>
+              )}
+            </div>
+          </motion.form>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+export default WritePage;
