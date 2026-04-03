@@ -1,0 +1,95 @@
+import React, { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
+
+const AboutModal = ({ isOpen, onClose }) => {
+  // Handle escape key to close
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  // Prevent scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.4, ease: "easeInOut" }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-[8px] p-4 sm:p-6"
+          onClick={onClose}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="about-modal-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 15, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+            className="bg-[rgba(15,15,15,0.95)] max-w-[550px] w-full p-10 md:p-14 rounded-3xl relative shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={onClose}
+              className="absolute top-6 right-6 text-[#a0a0a0] hover:text-[#e8e8e8] transition-colors duration-300 p-2"
+              aria-label="Close dialog"
+            >
+              <X size={14} strokeWidth={1.5} />
+            </button>
+
+            <div id="about-modal-title" className="sr-only">
+              About Unsaid
+            </div>
+
+            <div className="space-y-4 text-[#e8e8e8] font-serif text-lg md:text-xl leading-[1.9] tracking-wide font-light whitespace-pre-line">
+              <p>
+                i made something for the thoughts we never say out loud.
+              </p>
+              <p>
+                unsaid isn't really a platform.
+                it's just a place to leave things you don't know how to explain.
+              </p>
+              <p>
+                unfinished sentences.
+                2am thoughts.
+                things you felt but never said.
+              </p>
+              <p>
+                you don't have to make sense here.
+                you don't have to be okay.
+              </p>
+              <p>
+                just be honest.
+              </p>
+            </div>
+
+            <div className="mt-12 pt-8 border-t border-white/5">
+              <p className="text-[13px] text-[#a0a0a0] font-serif italic tracking-wider">
+                — for the ones who feel too much
+              </p>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export default AboutModal;
