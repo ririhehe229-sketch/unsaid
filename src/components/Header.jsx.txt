@@ -1,0 +1,140 @@
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { Menu, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const Header = () => {
+  const { isAuthenticated, currentUser, logout } = useAuth();
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const isActive = (path) => location.pathname === path;
+
+  const navLinks = [
+    { path: '/', label: 'Home', public: true },
+    { path: '/write', label: 'Write', public: true },
+    { path: '/private', label: 'Private Writing', public: false },
+    { path: '/echo', label: 'Echo', public: false },
+    { path: '/held-thoughts', label: 'Held Thoughts', public: false }
+  ];
+
+  const visibleLinks = navLinks.filter(link => link.public || isAuthenticated);
+
+  return (
+    <header className="border-b border-white/5 bg-background/40 backdrop-blur-md sticky top-0 z-50 transition-all duration-500">
+      <div className="max-w-5xl mx-auto px-6 sm:px-8 lg:px-12">
+        <div className="flex items-center justify-between h-20">
+          <Link to="/" className="flex items-center space-x-2 group">
+            <h1 className="text-3xl font-serif italic tracking-wider text-foreground group-hover:text-primary transition-colors duration-500">
+              Unsaid
+            </h1>
+          </Link>
+
+          <nav className="hidden md:flex items-center space-x-8">
+            {visibleLinks.map(link => (
+              <Link
+                key={link.path}
+                to={link.path}
+                className={`text-sm tracking-wide transition-all duration-300 hover:text-primary hover:drop-shadow-[0_0_8px_rgba(139,123,168,0.5)] ${
+                  isActive(link.path)
+                    ? 'text-primary font-medium'
+                    : 'text-secondary-text'
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="hidden md:flex items-center space-x-6">
+            {isAuthenticated ? (
+              <>
+                <span className="text-sm text-secondary-text/70 font-light tracking-wide">{currentUser?.email}</span>
+                <Button
+                  onClick={logout}
+                  variant="ghost"
+                  size="sm"
+                  className="text-secondary-text hover:text-foreground hover:bg-white/5 transition-all duration-300"
+                >
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="ghost" size="sm" className="text-secondary-text hover:text-foreground hover:bg-white/5 transition-all duration-300">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button size="sm" className="bg-primary/80 text-primary-foreground hover:bg-primary hover:shadow-[0_0_15px_rgba(139,123,168,0.4)] transition-all duration-300 rounded-full px-6">
+                    Sign Up
+                  </Button>
+                </Link>
+              </>
+            )}
+          </div>
+
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden text-secondary-text hover:text-foreground transition-colors"
+          >
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
+
+        {mobileMenuOpen && (
+          <div className="md:hidden py-6 border-t border-white/5 animate-fade-in-gentle">
+            <nav className="flex flex-col space-y-6">
+              {visibleLinks.map(link => (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`text-base tracking-wide transition-all duration-300 ${
+                    isActive(link.path)
+                      ? 'text-primary font-medium'
+                      : 'text-secondary-text'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <div className="pt-4 border-t border-white/5 flex flex-col space-y-4">
+                {isAuthenticated ? (
+                  <>
+                    <span className="text-sm text-secondary-text/70">{currentUser?.email}</span>
+                    <Button
+                      onClick={() => {
+                        logout();
+                        setMobileMenuOpen(false);
+                      }}
+                      variant="ghost"
+                      className="justify-start px-0 text-secondary-text"
+                    >
+                      Logout
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="ghost" className="w-full justify-start px-0 text-secondary-text">Login</Button>
+                    </Link>
+                    <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
+                      <Button className="w-full bg-primary/80 text-primary-foreground rounded-full">
+                        Sign Up
+                      </Button>
+                    </Link>
+                  </>
+                )}
+              </div>
+            </nav>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+};
+
+export default Header;
