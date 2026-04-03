@@ -1,0 +1,200 @@
+import React, { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet';
+import { motion } from 'framer-motion';
+import pb from '@/lib/pocketbaseClient';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+
+const reflectiveResponses = [
+  "That's a lot to carry alone.",
+  "Sometimes the unsaid things matter most.",
+  "You're allowed to feel this.",
+  "This is worth acknowledging.",
+  "Your feelings are valid.",
+  "It's okay to not have answers yet.",
+  "You're braver than you think.",
+  "This moment will pass, but it matters now.",
+  "You don't have to explain yourself.",
+  "Silence can be louder than words."
+];
+
+const pageVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.4 } },
+  exit: { opacity: 0, transition: { duration: 0.3 } }
+};
+
+const PrivateWritingPage = () => {
+  const { currentUser } = useAuth();
+  const [content, setContent] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [writings, setWritings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showResponse, setShowResponse] = useState(false);
+  const [aiResponse, setAiResponse] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    fetchWritings();
+  }, []);
+
+  const fetchWritings = async () => {
+    try {
+      const records = await pb.collection('private_writings').getList(1, 100, {
+        filter: `user_id="${currentUser.id}"`,
+        sort: '-created_at',
+        $autoCancel: false
+      });
+      setWritings(records.items);
+    } catch (error) {
+      console.error('Error fetching writings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!content.trim()) {
+      toast('please write something');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await pb.collection('private_writings').create({
+        content: content.trim(),
+        user_id: currentUser.id
+      }, { $autoCancel: false });
+
+      const randomResponse = reflectiveResponses[Math.floor(Math.random() * reflectiveResponses.length)];
+      setAiResponse(randomResponse);
+      setShowResponse(true);
+
+      setTimeout(() => {
+        setShowResponse(false);
+        setContent('');
+        fetchWritings();
+      }, 4000);
+
+      toast('saved quietly');
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      <Helmet>
+        <title>Private Space - Unsaid</title>
+        <meta name="description" content="Your private space for thoughts" />
+      </Helmet>
+
+      <div className="min-h-screen py-20 px-6 sm:px-8">
+        <div className="max-w-3xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1 }}
+            className="text-center mb-16"
+          >
+            <h1 className="text-4xl md:text-5xl font-serif italic tracking-wide leading-tight text-foreground">
+              Your private space
+            </h1>
+            <p className="mt-4 text-lg text-secondary-text/70 font-light">
+              write freely. no one else will see this.
+            </p>
+          </motion.div>
+
+          <form onSubmit={handleSubmit} className="mb-20">
+            <div className="space-y-8">
+              <div className="relative">
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  placeholder="what do you need to say?"
+                  rows={8}
+                  className="w-full bg-white/5 border border-white/10 rounded-3xl p-8 text-xl text-foreground font-serif leading-relaxed resize-none focus:outline-none input-glow transition-all duration-500 backdrop-blur-sm"
+                  style={{ 
+                    caretColor: 'hsl(var(--primary))',
+                    animation: isFocused ? 'pulse-cursor 2s infinite' : 'none'
+                  }}
+                />
+              </div>
+
+              {showResponse && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-6 bg-primary/10 border border-primary/20 rounded-2xl text-center"
+                >
+                  <p className="text-foreground/90 italic font-serif text-xl tracking-wide">
+                    {aiResponse}
+                  </p>
+                </motion.div>
+              )}
+
+              <div className="flex justify-center">
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-primary/80 text-primary-foreground hover:bg-primary hover:shadow-[0_0_25px_rgba(139,123,168,0.5)] transition-all duration-500 rounded-full px-12 py-7 text-lg font-light tracking-wide w-full md:w-auto"
+                >
+                  {submitting ? 'holding...' : 'hold this thought…'}
+                </Button>
+              </div>
+            </div>
+          </form>
+
+          <div>
+            <h2 className="text-2xl font-serif italic text-secondary-text/80 mb-8 tracking-wide">
+              Past reflections
+            </h2>
+
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-secondary-text animate-pulse font-light">gathering thoughts...</p>
+              </div>
+            ) : writings.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-secondary-text font-light">nothing here yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {writings.map((writing, index) => (
+                  <motion.div
+                    key={writing.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: index * 0.1 }}
+                    className="glass-morphism p-8 rounded-2xl animate-floating"
+                  >
+                    <p className="text-xl leading-relaxed text-foreground/90 mb-4 font-serif italic">
+                      "{writing.content}"
+                    </p>
+                    <p className="text-sm text-secondary-text/40 font-light tracking-wider">
+                      {new Date(writing.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+export default PrivateWritingPage;
