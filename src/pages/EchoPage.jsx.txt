@@ -1,0 +1,215 @@
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
+import { motion } from 'framer-motion';
+import pb from '@/lib/pocketbaseClient';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { Badge } from '@/components/ui/badge';
+import { Heart } from 'lucide-react';
+
+const pageVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.4 } },
+  exit: { opacity: 0, transition: { duration: 0.3 } }
+};
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.15 }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
+};
+
+const EchoPage = () => {
+  const { currentUser } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [echoes, setEchoes] = useState([]);
+  const [reactionCounts, setReactionCounts] = useState({});
+  const [topMatchId, setTopMatchId] = useState(null);
+
+  useEffect(() => {
+    fetchEchoes();
+  }, []);
+
+  const fetchEchoes = async () => {
+    try {
+      const userThoughtRecords = await pb.collection('thoughts').getFullList({
+        filter: `user_id="${currentUser.id}"`,
+        $autoCancel: false
+      });
+
+      const userTags = new Set();
+      const userKeywords = new Set();
+
+      userThoughtRecords.forEach(thought => {
+        if (thought.emotion_tags) {
+          thought.emotion_tags.forEach(tag => userTags.add(tag));
+        }
+        
+        const words = thought.content.toLowerCase().split(/\s+/);
+        words.forEach(word => {
+          if (word.length > 4) {
+            userKeywords.add(word);
+          }
+        });
+      });
+
+      const allThoughts = await pb.collection('thoughts').getFullList({
+        sort: '-created_at',
+        $autoCancel: false
+      });
+
+      let highestScore = 0;
+      let bestMatchId = null;
+
+      const matchedThoughts = allThoughts.map(thought => {
+        if (thought.user_id === currentUser.id) return { ...thought, score: -1 };
+
+        let score = 0;
+
+        if (thought.emotion_tags) {
+          thought.emotion_tags.forEach(tag => {
+            if (userTags.has(tag)) score += 2;
+          });
+        }
+
+        const words = thought.content.toLowerCase().split(/\s+/);
+        words.forEach(word => {
+          if (userKeywords.has(word)) score += 1;
+        });
+
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatchId = thought.id;
+        }
+
+        return { ...thought, score };
+      }).filter(t => t.score > 0).sort((a, b) => b.score - a.score);
+
+      setTopMatchId(bestMatchId);
+      setEchoes(matchedThoughts.slice(0, 20));
+
+      const counts = {};
+      for (const thought of matchedThoughts.slice(0, 20)) {
+        const reactions = await pb.collection('reactions').getFullList({
+          filter: `thought_id="${thought.id}"`,
+          $autoCancel: false
+        });
+        counts[thought.id] = reactions.length;
+      }
+      setReactionCounts(counts);
+    } catch (error) {
+      console.error('Error fetching echoes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-screen flex items-center justify-center">
+        <div className="text-2xl font-serif italic text-secondary-text animate-pulse tracking-wide">
+          gathering thoughts...
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      <Helmet>
+        <title>Echo Mode - Unsaid</title>
+        <meta name="description" content="Discover thoughts that echo your own" />
+      </Helmet>
+
+      <div className="min-h-screen py-20 px-6 sm:px-8">
+        <div className="max-w-3xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1 }}
+            className="text-center mb-16"
+          >
+            <h1 className="text-5xl md:text-6xl font-serif italic tracking-wide leading-tight text-foreground">
+              Echoes of your thoughts
+            </h1>
+            <p className="mt-4 text-xl text-secondary-text/70 font-light">
+              others have felt this way too
+            </p>
+          </motion.div>
+
+          {echoes.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-secondary-text text-lg mb-4 font-light">nothing feels familiar yet.</p>
+              <p className="text-sm text-secondary-text/50 font-light">
+                leave more thoughts to discover connections.
+              </p>
+            </div>
+          ) : (
+            <motion.div 
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+              className="space-y-10"
+            >
+              {echoes.map((thought) => {
+                const isTopMatch = thought.id === topMatchId;
+                
+                return (
+                  <motion.div key={thought.id} variants={itemVariants}>
+                    {isTopMatch && (
+                      <p className="text-center text-primary/80 font-serif italic mb-4 tracking-wide animate-pulse">
+                        this feels familiar...
+                      </p>
+                    )}
+                    <Link
+                      to={`/thought/${thought.id}`}
+                      className="block group"
+                    >
+                      <div className={`glass-morphism p-8 rounded-2xl transition-all duration-500 animate-floating ${
+                        isTopMatch 
+                          ? 'bg-white/10 border-primary/30 shadow-[0_0_30px_rgba(139,123,168,0.2)] group-hover:scale-[1.02] group-hover:shadow-[0_0_40px_rgba(139,123,168,0.4)]' 
+                          : 'group-hover:-translate-y-2 group-hover:shadow-[0_15px_40px_rgba(0,0,0,0.3)] group-hover:border-primary/20'
+                      }`}>
+                        <p className="text-2xl leading-relaxed text-foreground/95 mb-6 font-serif relative z-10">
+                          {thought.content}
+                        </p>
+                        
+                        {thought.emotion_tags && thought.emotion_tags.length > 0 && (
+                          <div className="flex flex-wrap gap-3 mb-5 relative z-10">
+                            {thought.emotion_tags.map((tag, i) => (
+                              <Badge
+                                key={i}
+                                variant="secondary"
+                                className="bg-white/5 text-secondary-text border-white/10 text-xs font-light tracking-wide px-3 py-1 group-hover:bg-primary/10 group-hover:text-primary-foreground transition-colors duration-300"
+                              >
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center text-sm text-secondary-text/60 font-light relative z-10 group-hover:text-primary/80 transition-colors duration-300">
+                          <Heart size={14} className="mr-2" />
+                          <span>{reactionCounts[thought.id] || 0}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+export default EchoPage;
