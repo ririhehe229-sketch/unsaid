@@ -1,0 +1,306 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
+import { motion } from 'framer-motion';
+import pb from '@/lib/pocketbaseClient';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
+import { ArrowLeft } from 'lucide-react';
+
+const reactionTypes = ['felt this', 'too real', 'this hurt', 'needed this'];
+
+const pageVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.4 } },
+  exit: { opacity: 0, transition: { duration: 0.3 } }
+};
+
+const ThoughtDetailPage = () => {
+  const { id } = useParams();
+  const { currentUser } = useAuth();
+  const [thought, setThought] = useState(null);
+  const [responses, setResponses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showResponses, setShowResponses] = useState(false);
+  const [newResponse, setNewResponse] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [thoughtReactions, setThoughtReactions] = useState({});
+  const [responseReactions, setResponseReactions] = useState({});
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    fetchThought();
+  }, [id]);
+
+  useEffect(() => {
+    if (responses.length > 0) {
+      const timer = setTimeout(() => {
+        setShowResponses(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [responses]);
+
+  const fetchThought = async () => {
+    try {
+      const record = await pb.collection('thoughts').getOne(id, { $autoCancel: false });
+      setThought(record);
+
+      const responseRecords = await pb.collection('responses').getFullList({
+        filter: `thought_id="${id}"`,
+        sort: 'created_at',
+        $autoCancel: false
+      });
+      setResponses(responseRecords);
+
+      const thoughtReactionRecords = await pb.collection('reactions').getFullList({
+        filter: `thought_id="${id}"`,
+        $autoCancel: false
+      });
+      const thoughtReactionCounts = {};
+      thoughtReactionRecords.forEach(r => {
+        thoughtReactionCounts[r.reaction_type] = (thoughtReactionCounts[r.reaction_type] || 0) + 1;
+      });
+      setThoughtReactions(thoughtReactionCounts);
+
+      const respReactions = {};
+      for (const resp of responseRecords) {
+        const reactionRecords = await pb.collection('reactions').getFullList({
+          filter: `response_id="${resp.id}"`,
+          $autoCancel: false
+        });
+        const counts = {};
+        reactionRecords.forEach(r => {
+          counts[r.reaction_type] = (counts[r.reaction_type] || 0) + 1;
+        });
+        respReactions[resp.id] = counts;
+      }
+      setResponseReactions(respReactions);
+    } catch (error) {
+      console.error('Error fetching thought:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitResponse = async (e) => {
+    e.preventDefault();
+
+    if (!newResponse.trim()) {
+      toast('please write something');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await pb.collection('responses').create({
+        thought_id: id,
+        content: newResponse.trim(),
+        user_id: currentUser?.id || null
+      }, { $autoCancel: false });
+
+      toast("it's here now");
+      setNewResponse('');
+      setShowResponses(true);
+      fetchThought();
+    } catch (error) {
+      toast("something didn't feel right, try again");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReaction = async (type, targetId, isResponse = false) => {
+    try {
+      await pb.collection('reactions').create({
+        thought_id: isResponse ? null : targetId,
+        response_id: isResponse ? targetId : null,
+        reaction_type: type,
+        user_id: currentUser?.id || null
+      }, { $autoCancel: false });
+
+      fetchThought();
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+    }
+  };
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.2 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, x: -20 },
+    show: { opacity: 1, x: 0, transition: { duration: 0.8, ease: "easeOut" } }
+  };
+
+  if (loading) {
+    return (
+      <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-screen flex items-center justify-center">
+        <div className="text-2xl font-serif italic text-secondary-text animate-pulse tracking-wide">
+          gathering thoughts...
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (!thought) {
+    return (
+      <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-6">
+          <p className="text-xl text-secondary-text font-light">this thought has faded away.</p>
+          <Link to="/">
+            <Button variant="outline" className="border-white/10 text-secondary-text hover:bg-white/5 rounded-full px-6">
+              return home
+            </Button>
+          </Link>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      <Helmet>
+        <title>{`${thought.content.substring(0, 40)}... - Unsaid`}</title>
+        <meta name="description" content={thought.content} />
+      </Helmet>
+
+      <div className="min-h-screen py-20 px-6 sm:px-8">
+        <div className="max-w-3xl mx-auto">
+          <Link to="/" className="inline-flex items-center text-secondary-text/60 hover:text-foreground mb-12 transition-all duration-300 font-light tracking-wide group">
+            <ArrowLeft size={18} className="mr-3 group-hover:-translate-x-1 transition-transform duration-300" />
+            back to thoughts
+          </Link>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1 }}
+            className="mb-16 animate-floating"
+          >
+            <p className="text-4xl md:text-5xl leading-relaxed text-foreground mb-8 font-serif italic tracking-wide">
+              "{thought.content}"
+            </p>
+
+            {thought.emotion_tags && thought.emotion_tags.length > 0 && (
+              <div className="flex flex-wrap gap-3 mb-8">
+                {thought.emotion_tags.map((tag, i) => (
+                  <Badge
+                    key={i}
+                    variant="secondary"
+                    className="bg-white/5 text-secondary-text border-white/10 text-sm font-light tracking-wide px-4 py-1.5"
+                  >
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-4">
+              {reactionTypes.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => handleReaction(type, thought.id)}
+                  className="px-4 py-2 rounded-full border border-white/10 text-sm text-secondary-text/80 hover:bg-white/5 hover:text-foreground hover:border-primary/30 hover:shadow-[0_0_10px_rgba(139,123,168,0.2)] transition-all duration-300 font-light tracking-wide flex items-center gap-2"
+                >
+                  {type} 
+                  {thoughtReactions[type] && (
+                    <span className="text-primary/80 font-medium">{thoughtReactions[type]}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          <div className="pl-4 md:pl-8 border-l-2 border-white/5 space-y-12 relative">
+            {responses.length > 0 && !showResponses && (
+              <div className="py-8 pl-8">
+                <p className="text-xl font-serif italic text-secondary-text/60 animate-pulse tracking-wide">
+                  responses arriving...
+                </p>
+              </div>
+            )}
+
+            {showResponses && (
+              <motion.div 
+                variants={containerVariants}
+                initial="hidden"
+                animate="show"
+                className="space-y-12"
+              >
+                {responses.map((response) => (
+                  <motion.div
+                    key={response.id}
+                    variants={itemVariants}
+                    className="pl-8 relative group"
+                  >
+                    <div className="absolute -left-[5px] top-4 w-2 h-2 rounded-full bg-primary/30 group-hover:bg-primary/80 transition-colors duration-500 shadow-[0_0_10px_rgba(139,123,168,0.5)]" />
+                    
+                    <p className="text-2xl leading-relaxed text-secondary-text/90 mb-6 font-serif">
+                      ...{response.content}
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      {reactionTypes.map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => handleReaction(type, response.id, true)}
+                          className="text-xs text-secondary-text/50 hover:text-primary/80 transition-colors duration-300 font-light tracking-wide flex items-center gap-1.5"
+                        >
+                          {type} 
+                          {responseReactions[response.id]?.[type] && (
+                            <span className="text-primary/60">{responseReactions[response.id][type]}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1, delay: 0.5 }}
+              className="pl-8 pt-8 relative"
+            >
+              <div className={`absolute -left-[5px] top-16 w-2 h-2 rounded-full transition-colors duration-500 ${isFocused ? 'bg-primary shadow-[0_0_15px_rgba(139,123,168,0.8)]' : 'bg-white/10'}`} />
+              
+              <form onSubmit={handleSubmitResponse} className="space-y-6">
+                <textarea
+                  value={newResponse}
+                  onChange={(e) => setNewResponse(e.target.value)}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  placeholder="let others complete your thought..."
+                  rows={3}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-xl text-foreground font-serif leading-relaxed resize-none focus:outline-none input-glow transition-all duration-500 backdrop-blur-sm"
+                  style={{ caretColor: 'hsl(var(--primary))' }}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    disabled={submitting || !newResponse.trim()}
+                    className="bg-primary/20 text-primary-foreground hover:bg-primary/80 hover:shadow-[0_0_15px_rgba(139,123,168,0.4)] transition-all duration-500 rounded-full px-8 font-light tracking-wide border border-primary/30"
+                  >
+                    {submitting ? 'gathering thoughts...' : 'add to the space'}
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+export default ThoughtDetailPage;
