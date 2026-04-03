@@ -1,0 +1,81 @@
+import React from 'react';
+import { Route, Routes, BrowserRouter as Router, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import { AuthProvider } from '@/contexts/AuthContext.jsx';
+import ScrollToTop from '@/components/ScrollToTop.jsx';
+import ProtectedRoute from '@/components/ProtectedRoute.jsx';
+import Header from '@/components/Header.jsx';
+import Footer from '@/components/Footer.jsx';
+import HomePage from '@/pages/HomePage.jsx';
+import WritePage from '@/pages/WritePage.jsx';
+import ThoughtDetailPage from '@/pages/ThoughtDetailPage.jsx';
+import PrivateWritingPage from '@/pages/PrivateWritingPage.jsx';
+import EchoPage from '@/pages/EchoPage.jsx';
+import HeldThoughtsPage from '@/pages/HeldThoughtsPage.jsx';
+import LoginPage from '@/pages/LoginPage.jsx';
+import SignupPage from '@/pages/SignupPage.jsx';
+import { Toaster } from '@/components/ui/sonner';
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/write" element={<WritePage />} />
+        <Route path="/thought/:id" element={<ThoughtDetailPage />} />
+        <Route
+          path="/private"
+          element={
+            <ProtectedRoute>
+              <PrivateWritingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/echo"
+          element={
+            <ProtectedRoute>
+              <EchoPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/held-thoughts"
+          element={
+            <ProtectedRoute>
+              <HeldThoughtsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+      </Routes>
+    </AnimatePresence>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <ScrollToTop />
+        <div className="flex flex-col min-h-screen">
+          <Header />
+          <main className="flex-grow">
+            <AnimatedRoutes />
+          </main>
+          <Footer />
+        </div>
+        <Toaster 
+          toastOptions={{
+            className: 'bg-background/80 backdrop-blur-md border-white/10 text-foreground font-light tracking-wide',
+          }}
+        />
+      </AuthProvider>
+    </Router>
+  );
+}
+
+export default App;
